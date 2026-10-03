@@ -60,30 +60,42 @@ Adjust these via **Search &rarr; Params**.
 
 ### Prerequisites
 
-Python 3.13 or higher
+Python 3.13 and Poetry 2.1.2.
 
 ### Setup
 
-Install poetry:
+Install Poetry if it is not already available:
 
 ```bash
 $ curl -sSL https://install.python-poetry.org | python3 -
 ```
 
-Install dependencies:
+Install the locked dependencies, including development tools:
 
 ```bash
-$ poetry install
+$ poetry install --with dev
 ```
 
-Activate vitrual enviroment:
+Run the application inside the Poetry environment:
 
 ```bash
-$ poetry shell
+$ poetry run python src/app.py
 ```
 
-Run the application:
+### Code quality
+
+Install the Git hook once:
 
 ```bash
-$ python src/app.py
+$ poetry run pre-commit install
+```
+
+Run all checks manually:
+
+```bash
+$ poetry check --lock
+$ poetry run ruff check src
+$ poetry run ruff format --check src
+$ poetry run mypy src
+$ poetry run pre-commit run --all-files
 ```

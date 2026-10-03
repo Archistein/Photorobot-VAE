@@ -1,20 +1,20 @@
-import torch
-import torch.nn.functional as F
-from torchvision.models import vgg16, VGG16_Weights
-import torch.nn as nn
-from torch.utils.data import DataLoader
-import torch.optim as optim
-from pytorch_msssim import SSIM
-from omegaconf import OmegaConf
 import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+from omegaconf import OmegaConf
+from pytorch_msssim import SSIM
+from torch.utils.data import DataLoader
+from torchvision.models import VGG16_Weights, vgg16
 from tqdm import tqdm
-from model import VAE
+
 import utils
+from model import VAE
 
-
-vgg_losses = []
-ssim_losses = []
-logcosh_losses = []
+vgg_losses: list[float] = []
+ssim_losses: list[float] = []
+logcosh_losses: list[float] = []
 
 ssim_module = SSIM(data_range=1.0, size_average=True, channel=1).to(utils.device)
 VGG_features = vgg16(weights=VGG16_Weights.DEFAULT).eval().features
@@ -38,8 +38,9 @@ def extract_features(x: torch.Tensor) -> list[torch.Tensor]:
     features = []
     out = x
 
-    for (k, module) in VGG_features._modules.items():
-        if int(k) > features_idx[-1]: break
+    for k, module in VGG_features._modules.items():
+        if int(k) > features_idx[-1]:
+            break
         out = module(out)
         if int(k) in features_idx:
             features.append(out)
@@ -47,7 +48,11 @@ def extract_features(x: torch.Tensor) -> list[torch.Tensor]:
     return features
 
 
-def ssim_denorm(tensor: torch.Tensor, mean=utils.config['calc_mean'], std=utils.config['calc_std']) -> torch.Tensor:
+def ssim_denorm(
+    tensor: torch.Tensor,
+    mean: float = utils.config["calc_mean"],
+    std: float = utils.config["calc_std"],
+) -> torch.Tensor:
     """Applies inverse normalization to a tensor for SSIM calculation
 
     Args:
@@ -65,11 +70,11 @@ def ssim_denorm(tensor: torch.Tensor, mean=utils.config['calc_mean'], std=utils.
 def loss(
     reconstr: torch.Tensor,
     target: torch.Tensor,
-    mu: torch.Tensor, 
+    mu: torch.Tensor,
     logvar: torch.Tensor,
     alpha: float = 1,
     beta: float = 1,
-    lmbd: float = 0.25
+    lmbd: float = 0.25,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Computes the combined KLd, reconstruction, SSIM, and VGG perceptual loss
 
@@ -89,38 +94,41 @@ def loss(
     """
 
     vgg_loss = torch.tensor(0.0, device=utils.device, requires_grad=True)
-    
+
     input_features = extract_features(target.repeat(1, 3, 1, 1))
     reconstruction_features = extract_features(reconstr.repeat(1, 3, 1, 1))
 
-    for i, (inp, rec) in enumerate(zip(input_features, reconstruction_features)):
+    for i, (inp, rec) in enumerate(
+        zip(input_features, reconstruction_features, strict=False)
+    ):
         inp = inp / (inp.std() + 1e-8)
         rec = rec / (rec.std() + 1e-8)
-        vgg_loss = vgg_loss + (0.95 ** i) * F.mse_loss(inp, rec)
+        vgg_loss = vgg_loss + (0.95**i) * F.mse_loss(inp, rec)
 
     reconstruction_loss = torch.mean(torch.log(torch.cosh(reconstr - target)))
     regularization_term = -0.5 * torch.sum(1 + logvar - mu**2 - logvar.exp(), dim=1)
 
     generated = ssim_denorm(reconstr)
     target = ssim_denorm(target)
-    
+
     generated = torch.clamp(generated, 0, 1)
     target = torch.clamp(target, 0, 1)
-    
+
     ssim_loss = 1 - ssim_module(generated, target)
 
     vgg_losses.append(vgg_loss.item())
     ssim_losses.append(ssim_loss.item())
     logcosh_losses.append(reconstruction_loss.item())
-    
-    return alpha * reconstruction_loss + beta * ssim_loss + lmbd * vgg_loss, regularization_term.mean()
+
+    return (
+        alpha * reconstruction_loss + beta * ssim_loss + lmbd * vgg_loss,
+        regularization_term.mean(),
+    )
 
 
 @torch.inference_mode
 def evaluate(
-    vae: VAE, 
-    beta: float,
-    dataloader: torch.utils.data.DataLoader
+    vae: VAE, beta: float, dataloader: torch.utils.data.DataLoader
 ) -> tuple[float, float]:
     """Evaluates the VAE model on a validation set
 
@@ -139,8 +147,7 @@ def evaluate(
     running_kl_loss = 0
     total_samples = 0
 
-    for inputs in (pbar := tqdm(dataloader, desc=f'Validation')):
-    
+    for inputs in (pbar := tqdm(dataloader, desc="Validation")):
         inputs = inputs.to(utils.config.device)
 
         reconstructions, mu, logvar = vae(inputs, stochastic=False)
@@ -155,7 +162,9 @@ def evaluate(
         avg_kl_loss = running_kl_loss / total_samples
         avg_elbo_loss = avg_rec_loss + beta * avg_kl_loss
 
-        pbar.set_description(f'Validation | Rec loss: {avg_rec_loss:.05f} | KL loss: {avg_kl_loss:.05f} | Elbo loss: {avg_elbo_loss:.05f}')
+        pbar.set_description(
+            f"Validation | Rec loss: {avg_rec_loss:.05f} | KL loss: {avg_kl_loss:.05f} | Elbo loss: {avg_elbo_loss:.05f}"
+        )
 
     vae.train()
 
@@ -166,7 +175,7 @@ def fit(
     vae: VAE,
     config: OmegaConf,
     train_dataloader: DataLoader,
-    val_dataloader: DataLoader
+    val_dataloader: DataLoader,
 ) -> None:
     """Trains the VAE model using a custom loss function
 
@@ -180,27 +189,30 @@ def fit(
     vae.train()
     vae.to(utils.device)
 
-    delta = config['delta_beta']
-    max_beta = config['max_beta']
-    min_beta = config['min_beta']
+    delta = config["delta_beta"]
+    max_beta = config["max_beta"]
+    min_beta = config["min_beta"]
     beta = min_beta
 
-    optimizer = optim.AdamW(vae.parameters(), config['lr'])
-    scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=config['scheduler_gamma'])
+    optimizer = optim.AdamW(vae.parameters(), config["lr"])
+    scheduler = optim.lr_scheduler.ExponentialLR(
+        optimizer, gamma=config["scheduler_gamma"]
+    )
 
     rec_losses = []
     kl_losses = []
     elbo_losses = []
 
-    min_elbo = float('inf')
+    min_elbo = float("inf")
 
-    for e in range(config['epoch']):
+    for e in range(config["epoch"]):
         running_rec_loss = 0
         running_kl_loss = 0
         total_samples = 0
 
-        for i, inputs in (pbar := tqdm(enumerate(train_dataloader), desc=f'Epoch: {e+1}')):
-        
+        for i, inputs in (
+            pbar := tqdm(enumerate(train_dataloader), desc=f"Epoch: {e + 1}")
+        ):
             inputs = inputs.to(utils.device)
 
             reconstructions, mu, logvar = vae(inputs)
@@ -214,26 +226,28 @@ def fit(
 
             optimizer.zero_grad()
             elbo_loss.backward()
-            nn.utils.clip_grad_norm_(vae.parameters(), config['grad_clip'])
+            nn.utils.clip_grad_norm_(vae.parameters(), config["grad_clip"])
             optimizer.step()
 
             avg_rec_loss = running_rec_loss / total_samples
             avg_kl_loss = running_kl_loss / total_samples
             avg_elbo_loss = avg_rec_loss + avg_kl_loss * 1e-4
 
-            pbar.set_description(f'Epoch: {e+1} | Rec loss: {avg_rec_loss:.05f} | KL loss: {avg_kl_loss:.05f} | Beta = {beta}')
+            pbar.set_description(
+                f"Epoch: {e + 1} | Rec loss: {avg_rec_loss:.05f} | KL loss: {avg_kl_loss:.05f} | Beta = {beta}"
+            )
 
-            if (i % 300 == 0 and i != 0):
+            if i % 300 == 0 and i != 0:
                 beta += delta * np.cos(e)
-                
-                if beta < min_beta: 
+
+                if beta < min_beta:
                     beta = min_beta
                 if beta > max_beta:
                     beta = max_beta
-                
+
                 if avg_elbo_loss < min_elbo:
                     min_elbo = avg_elbo_loss
-                    torch.save(vae.state_dict(), 'params.pt')
+                    torch.save(vae.state_dict(), "params.pt")
 
                 running_rec_loss = 0
                 running_kl_loss = 0
@@ -242,9 +256,9 @@ def fit(
             rec_losses.append(avg_rec_loss)
             kl_losses.append(avg_kl_loss)
             elbo_losses.append(avg_elbo_loss)
-        
+
         val_rec_loss, val_kl_loss = evaluate(vae, beta, val_dataloader)
 
-        torch.save(vae.state_dict(), 'last_params.pt')
+        torch.save(vae.state_dict(), "last_params.pt")
 
         scheduler.step()

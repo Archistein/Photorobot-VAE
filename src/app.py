@@ -1,37 +1,51 @@
-from typing import Optional
-import sys
+import io
 import os
 import pickle
+import sys
 import threading
-import io
-import numpy as np
+from collections.abc import Callable
+
 import cv2
-from PIL import Image, ImageOps
-from omegaconf import OmegaConf
+import numpy as np
 import torch
+from omegaconf import OmegaConf
+from PIL import Image, ImageOps
+from PyQt6.QtCore import QEvent, QObject, QPoint, Qt, pyqtSignal
+from PyQt6.QtGui import QColor, QIcon, QImage, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
-    QDialog, QDialogButtonBox, QApplication, QWidget, QTabWidget, 
-    QMainWindow, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, 
-    QPushButton, QSlider, QFileDialog, QProgressBar, QScrollArea
+    QApplication,
+    QDialog,
+    QDialogButtonBox,
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QProgressBar,
+    QPushButton,
+    QScrollArea,
+    QSlider,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6.QtGui import QPixmap, QImage, QPen, QPainter, QColor, QIcon
-from PyQt6.QtCore import Qt, QEvent, QObject, QPoint, pyqtSignal
+
+import utils
 from model import VAE
 from train import extract_features
-import utils
 
 
 class OptimizationParams(QWidget):
     """A PyQt widget for configuring and displaying optimization parameters"""
 
     def __init__(
-        self, 
-        alpha: float = 1e-1, 
-        beta: float = 1, 
+        self,
+        alpha: float = 1e-1,
+        beta: float = 1,
         gamma: float = 1e-4,
-        delta: float = 1e-4, 
-        lr: float = 0.02, 
-        steps: int = 100
+        delta: float = 1e-4,
+        lr: float = 0.02,
+        steps: int = 100,
     ) -> None:
         """Initializes the UI and parameters
 
@@ -55,7 +69,9 @@ class OptimizationParams(QWidget):
 
         self.init_ui()
 
-    def __create_field(self, label: str, value: float | int) -> tuple[QHBoxLayout, QLineEdit]:
+    def __create_field(
+        self, label: str, value: float | int
+    ) -> tuple[QHBoxLayout, QLineEdit]:
         """Creates a horizontal layout with label and a QLineEdit field
 
         Args:
@@ -79,12 +95,16 @@ class OptimizationParams(QWidget):
 
         main_layout = QVBoxLayout()
 
-        search_loss_path = os.path.join(os.path.dirname(__file__), '../assets/search_loss.html')
-        with open(search_loss_path, "r", encoding="utf-8") as f:
+        search_loss_path = os.path.join(
+            os.path.dirname(__file__), "../assets/search_loss.html"
+        )
+        with open(search_loss_path, encoding="utf-8") as f:
             search_loss = f.read()
 
         search_loss_label = QLabel(search_loss)
-        search_loss_label.setStyleSheet("font-family: \"Times New Roman\", Times, serif;font-size: 20px")
+        search_loss_label.setStyleSheet(
+            'font-family: "Times New Roman", Times, serif;font-size: 20px'
+        )
         main_layout.addWidget(search_loss_label)
 
         steps_layout, self.steps_field = self.__create_field("Steps:", self.steps)
@@ -94,10 +114,17 @@ class OptimizationParams(QWidget):
         delta_layout, self.delta_field = self.__create_field("Delta:", self.delta)
         lr_layout, self.lr_field = self.__create_field("Learning rate:", self.lr)
 
-        self.save_button = QPushButton('Save')
+        self.save_button = QPushButton("Save")
         self.save_button.clicked.connect(self.save_params)
 
-        layouts = [steps_layout, alpha_layout, beta_layout, gamma_layout, delta_layout, lr_layout]
+        layouts = [
+            steps_layout,
+            alpha_layout,
+            beta_layout,
+            gamma_layout,
+            delta_layout,
+            lr_layout,
+        ]
         for layout in layouts:
             main_layout.addLayout(layout)
         main_layout.addWidget(self.save_button)
@@ -106,65 +133,81 @@ class OptimizationParams(QWidget):
         self.setWindowTitle("Optimization Params")
         self.resize(400, 300)
 
-    def __check_field(
-        self, 
-        text: str, 
-        field_name: str, 
-        target_type: type, 
-        min_val: Optional[float] = None, 
-        max_val: Optional[float] = None
-    ) -> int | float:
+    def __check_field[T: (int, float)](
+        self,
+        text: str,
+        field_name: str,
+        target_type: type[T],
+        min_val: float | None = None,
+        max_val: float | None = None,
+    ) -> T:
         """Validates and converts a field value
-    
+
         Args:
             text (str): The text input from the field
             field_name (str): Name of the field for error messages
             target_type (type): Desired type
             min_val (float): Minimum allowed value (inclusive), optional
             max_val (float): Maximum allowed value (inclusive), optional
-        
+
         Returns:
             (int|float): The converted value
-            
+
         Raises:
             ValueError: If the field is empty, not convertible, or out of range
         """
 
         if not text.strip():
             raise ValueError(f"{field_name} field cannot be empty")
-        
+
         try:
             value = target_type(text)
-        except ValueError:
-            raise ValueError(f"{field_name} must be a valid {target_type.__name__}")
-        
+        except ValueError as exc:
+            raise ValueError(
+                f"{field_name} must be a valid {target_type.__name__}"
+            ) from exc
+
         if min_val is not None and value < min_val:
             raise ValueError(f"{field_name} must be at least {min_val}")
         if max_val is not None and value > max_val:
             raise ValueError(f"{field_name} must be at most {max_val}")
-            
+
         return value
 
     def save_params(self) -> None:
         """Saves the parameters after validation"""
 
         try:
-            self.steps = self.__check_field(self.steps_field.text(), "Steps", int, min_val=1)
-            self.alpha = self.__check_field(self.alpha_field.text(), "Alpha", float, min_val=0)
-            self.beta = self.__check_field(self.beta_field.text(), "Beta", float, min_val=0)
-            self.gamma = self.__check_field(self.gamma_field.text(), "Gamma", float, min_val=0)            
-            self.delta = self.__check_field(self.delta_field.text(), "Delta", float, min_val=0)           
-            self.lr = self.__check_field(self.lr_field.text(), "Learning rate", float, min_val=1e-10, max_val=0.1)
-            
+            self.steps = self.__check_field(
+                self.steps_field.text(), "Steps", int, min_val=1
+            )
+            self.alpha = self.__check_field(
+                self.alpha_field.text(), "Alpha", float, min_val=0
+            )
+            self.beta = self.__check_field(
+                self.beta_field.text(), "Beta", float, min_val=0
+            )
+            self.gamma = self.__check_field(
+                self.gamma_field.text(), "Gamma", float, min_val=0
+            )
+            self.delta = self.__check_field(
+                self.delta_field.text(), "Delta", float, min_val=0
+            )
+            self.lr = self.__check_field(
+                self.lr_field.text(), "Learning rate", float, min_val=1e-10, max_val=0.1
+            )
+
             self.close()
-            
+
         except ValueError as e:
             # Handle invalid input (non-numeric or out of range)
             from PyQt6.QtWidgets import QMessageBox
+
             QMessageBox.warning(self, "Invalid Input", str(e))
         except Exception as e:
             # Handle any other unexpected errors
             from PyQt6.QtWidgets import QMessageBox
+
             QMessageBox.critical(self, "Error", f"An error occurred: {str(e)}")
 
 
@@ -176,7 +219,10 @@ class SaveDialog(QDialog):
 
         self.setWindowTitle("Save direction")
 
-        QBtn = QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
+        QBtn = (
+            QDialogButtonBox.StandardButton.Save
+            | QDialogButtonBox.StandardButton.Cancel
+        )
 
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
@@ -194,20 +240,20 @@ class SaveDialog(QDialog):
 
 class PhotorobotApp(QMainWindow):
     """A main application window for the Photorobot VAE"""
-    
+
     image_optimization_step = pyqtSignal()
-    progress_bar_step = pyqtSignal(int) 
+    progress_bar_step = pyqtSignal(int)
     add_slider = pyqtSignal(torch.Tensor)
 
     def __init__(
-        self, 
-        vae: VAE, 
-        grouped_directions: dict[dict[str, torch.Tensor]], 
-        device: torch.device, 
-        config: OmegaConf
+        self,
+        vae: VAE,
+        grouped_directions: dict[str, dict[str, torch.Tensor]],
+        device: torch.device,
+        config: OmegaConf,
     ) -> None:
         """Initializes the PhotorobotApp main window.
-        
+
         Sets up the main application window, initializes signals, UI components, and default parameters for image editing
 
         Args:
@@ -215,28 +261,30 @@ class PhotorobotApp(QMainWindow):
             grouped_directions (dict[dict[str, torch.Tensor]]): A dictionary of grouped latent directions for image manipulation
             device (torch.device): The PyTorch device for tensor operations
             config (OmegaConf): Configuration object
-        """ 
+        """
 
         super().__init__()
 
         self.vae = vae
         self.device = device
-        self.latent_dim = config['latent_dim']
-        self.base_img_width = config['img_width']
-        self.base_img_height = config['img_height']
+        self.latent_dim = config["latent_dim"]
+        self.base_img_width = config["img_width"]
+        self.base_img_height = config["img_height"]
         self.img_width = int(2.5 * self.base_img_width)
         self.img_height = int(2.5 * self.base_img_height)
 
-        self.grouped_directions = grouped_directions | {'Custom': {}}
-        self.grouped_directions_coeff = {g: dict.fromkeys(d, 0) for g, d in grouped_directions.items()} | {'Custom': {}}
-        self.var = 1 # latent vector variance
+        self.grouped_directions = grouped_directions | {"Custom": {}}
+        self.grouped_directions_coeff: dict[str, dict[str, float]] = {
+            g: dict.fromkeys(d, 0.0) for g, d in grouped_directions.items()
+        } | {"Custom": {}}
+        self.var = 1.0  # latent vector variance
 
-        self.z = torch.zeros(config['latent_dim'])
+        self.z = torch.zeros(config["latent_dim"])
 
         self.paint_mode = False
         self.is_drawing = False
         self.last_point = QPoint()
-        self.bin_mask = None
+        self.bin_mask = QPixmap()
         self.brush_size = 15
 
         self.image_optimization_step.connect(self.update_image)
@@ -249,7 +297,7 @@ class PhotorobotApp(QMainWindow):
 
     def update_progress_bar(self, value: int) -> None:
         """Updates progress bar value
-        
+
         Args:
             value (int): Progress bar value in percentage
         """
@@ -260,8 +308,10 @@ class PhotorobotApp(QMainWindow):
         """Initializes the user interface for the Photorobot VAE application"""
 
         menu_bar = self.menuBar()
-        
-        menu_structure = {
+
+        menu_structure: dict[
+            str, list[tuple[str, Callable[[], None] | None] | None]
+        ] = {
             "File": [
                 ("Open", None),
                 ("Save", None),
@@ -273,22 +323,24 @@ class PhotorobotApp(QMainWindow):
                 ("Export directions", None),
                 None,  # Separator
                 ("Export sketch", self.export_sketch),
-                ("Exit", lambda: os._exit(0))
+                ("Exit", lambda: os._exit(0)),
             ],
             "Reset": [
                 ("Reset sliders", self.reset_sliders),
-                ("Reset latent", self.reset_latent)
+                ("Reset latent", self.reset_latent),
             ],
             "Search": [
                 ("Select", self.toggle_paint_mode),
                 ("Params", self.set_optimization_params),
                 None,  # Separator
-                ("Optimize", self.start_search_direction)
-            ]
+                ("Optimize", self.start_search_direction),
+            ],
         }
 
         for menu_name, actions in menu_structure.items():
+            assert menu_bar is not None
             menu = menu_bar.addMenu(menu_name)
+            assert menu is not None
             for action_info in actions:
                 if action_info is None:
                     menu.addSeparator()
@@ -296,13 +348,14 @@ class PhotorobotApp(QMainWindow):
                     name, callback = action_info
                     action = menu.addAction(name)
                     if callback:
+                        assert action is not None
                         action.triggered.connect(callback)
 
         central_widget = QWidget()
         main_layout = QHBoxLayout(central_widget)
         right_layout = QVBoxLayout()
         left_layout = QVBoxLayout()
-        
+
         self.setCentralWidget(central_widget)
 
         image = self.decode_latent_to_QImage(self.z * self.var)
@@ -317,7 +370,7 @@ class PhotorobotApp(QMainWindow):
         aligner_layout.addWidget(self.aligner_slider)
         left_layout.addLayout(aligner_layout)
 
-        self.right_sliders = {}
+        self.right_sliders: dict[str, QSlider] = {}
         self.tabs = self.__init_tabs()
 
         right_layout.addWidget(self.tabs)
@@ -325,8 +378,8 @@ class PhotorobotApp(QMainWindow):
         self.image = QLabel(self)
         self.pixmap = QPixmap(image)
         self.original_size = self.pixmap.size()
-        self.bin_mask = QPixmap(self.pixmap.size()) 
-        self.bin_mask.fill(Qt.GlobalColor.transparent)         
+        self.bin_mask = QPixmap(self.pixmap.size())
+        self.bin_mask.fill(Qt.GlobalColor.transparent)
         self.image.setPixmap(self.pixmap)
         self.image.setAlignment(Qt.AlignmentFlag.AlignCenter)
         left_layout.addWidget(self.image)
@@ -344,7 +397,7 @@ class PhotorobotApp(QMainWindow):
         self.brush_slider.valueChanged.connect(self.update_brush_size)
         left_layout.addLayout(brush_layout)
 
-        self.progress_bar = QProgressBar()  
+        self.progress_bar = QProgressBar()
         self.progress_bar.setMaximum(100)
         self.progress_bar.setVisible(False)
         left_layout.addWidget(self.progress_bar)
@@ -360,7 +413,7 @@ class PhotorobotApp(QMainWindow):
         self.image.installEventFilter(self)
 
         self.setWindowTitle("Photorobot VAE")
-        self.showMaximized() 
+        self.showMaximized()
 
     def __init_tabs(self) -> QTabWidget:
         """Initializes a QTabWidget containing a tab with sliders for each group of directions
@@ -381,9 +434,13 @@ class PhotorobotApp(QMainWindow):
                 slider = QSlider(Qt.Orientation.Horizontal)
                 slider.setRange(-200, 200)
                 slider.setValue(0)
-                slider.valueChanged.connect(lambda value, g=group, d=direction: self.update_direction_coeff(value, g, d))
+                slider.valueChanged.connect(
+                    lambda value, g=group, d=direction: self.update_direction_coeff(
+                        value, g, d
+                    )
+                )
                 slider_layout.addWidget(slider)
-                self.right_sliders[f'{group}_{direction}'] = slider
+                self.right_sliders[f"{group}_{direction}"] = slider
                 tab_layout.addLayout(slider_layout)
             tab_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
             tab.setLayout(tab_layout)
@@ -392,8 +449,10 @@ class PhotorobotApp(QMainWindow):
             scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
             scroll.setWidgetResizable(True)
             scroll.setWidget(tab)
-            
-            self.tabs.addTab(scroll, self.invert_icon(f"assets/icons/{group.lower()}.png"), group)
+
+            self.tabs.addTab(
+                scroll, self.invert_icon(f"assets/icons/{group.lower()}.png"), group
+            )
 
         return self.tabs
 
@@ -409,14 +468,24 @@ class PhotorobotApp(QMainWindow):
         """
 
         denorm_img = utils.denormalize(self.vae.decoder(latent).squeeze(0, 1))
-        resized_img = cv2.resize(denorm_img, dsize=(self.img_width, self.img_height), interpolation=cv2.INTER_LANCZOS4)
-        qimg = QImage(resized_img.data, self.img_width, self.img_height, self.img_width, QImage.Format.Format_Grayscale8)
+        resized_img = cv2.resize(
+            denorm_img,
+            dsize=(self.img_width, self.img_height),
+            interpolation=cv2.INTER_LANCZOS4,
+        )
+        qimg = QImage(
+            resized_img.data,
+            self.img_width,
+            self.img_height,
+            self.img_width,
+            QImage.Format.Format_Grayscale8,
+        )
 
         return qimg
-    
+
     def update_direction_coeff(self, value: int, group: str, direction: str) -> None:
         """Updates the direction coefficient in a specified group
-        
+
         Args:
             value (int): The coefficient value as an integer percentage
             group (str): The group name where the direction coefficient should be updated
@@ -428,14 +497,14 @@ class PhotorobotApp(QMainWindow):
 
     def update_brush_size(self, value: int) -> None:
         """Updates brush size
-        
+
         Args:
             value (int): The brush size value
         """
 
         self.brush_size = value
 
-    def eventFilter(self, source: QObject, event: QEvent) -> bool:
+    def eventFilter(self, source: QObject | None, event: QEvent | None) -> bool:
         """Handles mouse events for drawing on a label in paint mode
 
         Args:
@@ -446,8 +515,11 @@ class PhotorobotApp(QMainWindow):
             (bool): True if the event was handled, False otherwise
         """
 
-        if source == self.image and self.paint_mode:
-            if event.type() == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
+        if source == self.image and self.paint_mode and event is not None:
+            if (
+                event.type() == QEvent.Type.MouseButtonPress
+                and event.button() == Qt.MouseButton.LeftButton
+            ):
                 self.is_drawing = True
                 pos = self.map_to_pixmap(event.pos())
                 self.last_point = pos
@@ -458,14 +530,17 @@ class PhotorobotApp(QMainWindow):
                 self.draw_on_mask(pos)
                 self.last_point = pos
                 return True
-            elif event.type() == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton:
+            elif (
+                event.type() == QEvent.Type.MouseButtonRelease
+                and event.button() == Qt.MouseButton.LeftButton
+            ):
                 self.is_drawing = False
                 return True
-    
+
         return super().eventFilter(source, event)
 
     def map_to_pixmap(self, pos: QPoint) -> QPoint:
-        """Maps a position from the QLabel coordinate space to the corresponding coordinates 
+        """Maps a position from the QLabel coordinate space to the corresponding coordinates
         within the displayed QPixmap, taking into account center alignment
 
         Args:
@@ -477,18 +552,18 @@ class PhotorobotApp(QMainWindow):
 
         pixmap_rect = self.pixmap.rect()
         image_rect = self.image.rect()
-        
+
         # Сonsidering (AlignmentFlag.AlignCenter)
         pixmap_x = (image_rect.width() - pixmap_rect.width()) // 2
         pixmap_y = (image_rect.height() - pixmap_rect.height()) // 2
-        
+
         mapped_x = pos.x() - pixmap_x
         mapped_y = pos.y() - pixmap_y
-        
+
         # Bounded coords with pixmap size
         mapped_x = max(0, min(mapped_x, pixmap_rect.width() - 1))
         mapped_y = max(0, min(mapped_y, pixmap_rect.height() - 1))
-        
+
         return QPoint(mapped_x, mapped_y)
 
     def draw_on_mask(self, position: QPoint) -> None:
@@ -498,15 +573,20 @@ class PhotorobotApp(QMainWindow):
             position (QPoint): The current position of the cursor where drawing is applied
         """
         painter = QPainter(self.bin_mask)
-        pen = QPen(QColor(255, 255, 255, 255), self.brush_size, Qt.PenStyle.SolidLine, 
-                Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+        pen = QPen(
+            QColor(255, 255, 255, 255),
+            self.brush_size,
+            Qt.PenStyle.SolidLine,
+            Qt.PenCapStyle.RoundCap,
+            Qt.PenJoinStyle.RoundJoin,
+        )
         painter.setPen(pen)
-        
+
         if self.is_drawing and not self.last_point.isNull():
             painter.drawLine(self.last_point, position)
         else:
             painter.drawPoint(position)
-            
+
         painter.end()
         self.display_image()
 
@@ -554,13 +634,19 @@ class PhotorobotApp(QMainWindow):
         mask_image = self.bin_mask.toImage()
         width = mask_image.width()
         height = mask_image.height()
-        
+
         ptr = mask_image.bits()
+        if ptr is None:
+            raise RuntimeError("Mask image data is unavailable")
         ptr.setsize(height * width * 4)  # 4 bytes per pixel (RGBA)
         arr = np.frombuffer(ptr, np.uint8).reshape(height, width, 4)
-        
+
         mask_array = (arr[:, :, 3] > 0).astype(np.uint8)
-        mask_resized = cv2.resize(mask_array, dsize=(self.base_img_width, self.base_img_height), interpolation=cv2.INTER_NEAREST)
+        mask_resized = cv2.resize(
+            mask_array,
+            dsize=(self.base_img_width, self.base_img_height),
+            interpolation=cv2.INTER_NEAREST,
+        )
 
         return torch.from_numpy(mask_resized)
 
@@ -575,10 +661,7 @@ class PhotorobotApp(QMainWindow):
         """Initiates the process of loading and optimizing an image file"""
 
         file_name, _ = QFileDialog.getOpenFileName(
-            self,
-            "Open file",
-            "",
-            "Images (*.png *.jpg *.jpeg *.gif)"
+            self, "Open file", "", "Images (*.png *.jpg *.jpeg *.gif)"
         )
 
         if file_name:
@@ -586,11 +669,12 @@ class PhotorobotApp(QMainWindow):
             thread = threading.Thread(target=self.load_optimization, args=[file_name])
             thread.start()
 
-    def __calc_features(self) -> None:
+    def __calc_features(self) -> list[torch.Tensor]:
         """Calculate features by multiplying direction values with their coefficients"""
 
-        return [    
-            self.grouped_directions[group][direct] * self.grouped_directions_coeff[group][direct]
+        return [
+            self.grouped_directions[group][direct]
+            * self.grouped_directions_coeff[group][direct]
             for group in self.grouped_directions
             for direct in self.grouped_directions[group]
             if self.grouped_directions_coeff[group][direct] != 0
@@ -618,17 +702,19 @@ class PhotorobotApp(QMainWindow):
 
         for i in range(self.params.steps):
             opt_img = self.vae.decoder((z + sum(features)) * self.var)
-            loss = -alpha * loss_fn(opt_img * mask, source_img * mask) \
-                + beta * loss_fn(opt_img * (1-mask), source_img * (1-mask)) \
-                + gamma * loss_fn(init_z, z) \
-                + delta * torch.sum(z ** 2)
+            loss = (
+                -alpha * loss_fn(opt_img * mask, source_img * mask)
+                + beta * loss_fn(opt_img * (1 - mask), source_img * (1 - mask))
+                + gamma * loss_fn(init_z, z)
+                + delta * torch.sum(z**2)
+            )
             optim.zero_grad()
             loss.backward()
             optim.step()
             self.z = z.clone().detach()
             self.progress_bar_step.emit(int(i / self.params.steps * 100))
             self.image_optimization_step.emit()
-        
+
         self.z = init_z
 
         self.add_slider.emit(z.clone().detach() - init_z)
@@ -646,15 +732,22 @@ class PhotorobotApp(QMainWindow):
 
         if not save_dlg.exec():
             return
-        
+
         direction_name = save_dlg.name.text()
 
-        self.grouped_directions['Custom'][direction_name] = direction
-        self.grouped_directions_coeff['Custom'][direction_name] = 1
+        self.grouped_directions["Custom"][direction_name] = direction
+        self.grouped_directions_coeff["Custom"][direction_name] = 1
 
-        tab = self.tabs.widget(7).widget()
+        scroll = self.tabs.widget(7)
+        if not isinstance(scroll, QScrollArea):
+            raise RuntimeError("Custom directions tab is unavailable")
+        tab = scroll.widget()
+        if tab is None:
+            raise RuntimeError("Custom directions widget is unavailable")
         tab_layout = tab.layout()
-    
+        if tab_layout is None:
+            raise RuntimeError("Custom directions layout is unavailable")
+
         slider_layout = QVBoxLayout()
         label = QLabel(direction_name)
         slider_layout.addWidget(label)
@@ -662,10 +755,14 @@ class PhotorobotApp(QMainWindow):
         slider = QSlider(Qt.Orientation.Horizontal)
         slider.setRange(-200, 200)
         slider.setValue(100)
-        slider.valueChanged.connect(lambda value, g='Custom', d=direction_name: self.update_direction_coeff(value, g, d))
+        slider.valueChanged.connect(
+            lambda value, g="Custom", d=direction_name: self.update_direction_coeff(
+                value, g, d
+            )
+        )
         slider_layout.addWidget(slider)
         tab_layout.addLayout(slider_layout)
-        self.right_sliders[f'Custom_{direction_name}'] = slider
+        self.right_sliders[f"Custom_{direction_name}"] = slider
 
         self.update_image()
 
@@ -678,15 +775,18 @@ class PhotorobotApp(QMainWindow):
         """Opens a file dialog to select an image file, processes the image, and encodes it into VAE latent space"""
 
         file_name, _ = QFileDialog.getOpenFileName(
-            self,
-            "Open file",
-            "",
-            "Images (*.png *.jpg *.jpeg *.gif)"
+            self, "Open file", "", "Images (*.png *.jpg *.jpeg *.gif)"
         )
-        
+
         # TODO: crop and resize in separate window
 
-        img = transforms(image=np.array(Image.open(file_name).convert('RGB').resize((160, 160), Image.Resampling.LANCZOS)))['image'] # TODO: fix transforms global var
+        img = transforms(
+            image=np.array(
+                Image.open(file_name)
+                .convert("RGB")
+                .resize((160, 160), Image.Resampling.LANCZOS)
+            )
+        )["image"]  # TODO: fix transforms global var
         self.z = self.vae.encoder(img.unsqueeze(0))[0]
         self.update_image()
 
@@ -697,13 +797,19 @@ class PhotorobotApp(QMainWindow):
             file_name (str): Path to the input image file
         """
 
-        img = transforms(image=np.array(Image.open(file_name).convert('RGB').resize((160, 160), Image.Resampling.LANCZOS)))['image']
-        img = img.unsqueeze(0).requires_grad_(True) 
-        
+        img = transforms(
+            image=np.array(
+                Image.open(file_name)
+                .convert("RGB")
+                .resize((160, 160), Image.Resampling.LANCZOS)
+            )
+        )["image"]
+        img = img.unsqueeze(0).requires_grad_(True)
+
         # TODO: take out opt params to OptParams
         z_opt = self.vae.encoder(img)[0].clone().detach()
         z_opt.requires_grad_(True)
-        optim = torch.optim.AdamW([z_opt], lr=0.02) 
+        optim = torch.optim.AdamW([z_opt], lr=0.02)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optim)
         loss_fn = torch.nn.MSELoss()
 
@@ -712,8 +818,8 @@ class PhotorobotApp(QMainWindow):
             vgg_loss = torch.tensor(0.0, device=self.device, requires_grad=True)
             input_features = extract_features(img.repeat(1, 3, 1, 1))
             reconstruction_features = extract_features(img_opt.repeat(1, 3, 1, 1))
-            
-            for (inp, rec) in zip(input_features, reconstruction_features):
+
+            for inp, rec in zip(input_features, reconstruction_features, strict=False):
                 vgg_loss = vgg_loss + loss_fn(inp, rec)
 
             vgg_loss = vgg_loss + 0.001 * torch.sum(z_opt**2)
@@ -727,17 +833,14 @@ class PhotorobotApp(QMainWindow):
 
             self.image_optimization_step.emit()
             self.progress_bar_step.emit(int(i))
-        
+
         self.progress_bar.setVisible(False)
 
     def export_sketch(self) -> None:
         """Saves sketch as jpg file"""
 
         file_name, _ = QFileDialog.getSaveFileName(
-            self,
-            "Save file",
-            "",
-            "Images (*.jpg)"
+            self, "Save file", "", "Images (*.jpg)"
         )
 
         self.image.pixmap().save(file_name)
@@ -753,8 +856,8 @@ class PhotorobotApp(QMainWindow):
 
         for group in list(self.grouped_directions):
             for direction in list(self.grouped_directions[group]):
-                self.right_sliders[f'{group}_{direction}'].setValue(0)         
-                self.grouped_directions_coeff[group][direction] = 0      
+                self.right_sliders[f"{group}_{direction}"].setValue(0)
+                self.grouped_directions_coeff[group][direction] = 0
         self.aligner_slider.setValue(100)
         self.update_image()
 
@@ -774,7 +877,7 @@ class PhotorobotApp(QMainWindow):
             QIcon: A Qt icon object with inverted colors
         """
 
-        img = Image.open(icon_path).convert("RGBA") 
+        img = Image.open(icon_path).convert("RGBA")
 
         r, g, b, a = img.split()
 
@@ -785,11 +888,11 @@ class PhotorobotApp(QMainWindow):
         inverted_img = Image.merge("RGBA", (*rgb_inverted.split(), a))
 
         img_bytes = io.BytesIO()
-        inverted_img.save(img_bytes, format="PNG")  
+        inverted_img.save(img_bytes, format="PNG")
         pixmap = QPixmap()
         pixmap.loadFromData(img_bytes.getvalue())
 
-        return QIcon(pixmap)  
+        return QIcon(pixmap)
 
 
 if __name__ == "__main__":
@@ -800,9 +903,13 @@ if __name__ == "__main__":
 
     _, transforms = utils.get_transforms()
 
-    params_path = os.path.join(os.path.dirname(__file__), config['params_path'])
-    directions_path = os.path.join(os.path.dirname(__file__), config['directions_path'])
-    vae = VAE((config['img_height'], config['img_width']), config['img_channels'], config['latent_dim'])
+    params_path = os.path.join(os.path.dirname(__file__), config["params_path"])
+    directions_path = os.path.join(os.path.dirname(__file__), config["directions_path"])
+    vae = VAE(
+        (config["img_height"], config["img_width"]),
+        config["img_channels"],
+        config["latent_dim"],
+    )
     vae.load_state_dict(torch.load(params_path, weights_only=True, map_location=device))
     vae.eval()
 

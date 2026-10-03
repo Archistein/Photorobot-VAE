@@ -18,6 +18,7 @@ dependencies = [
     "pyqt6-sip (==13.10.0)",
     "torch (==2.6.0)",
     "torchvision (==0.21.0)",
+    "tqdm (==4.67.1)",
     "pytorch-msssim (>=1.0.0,<2.0.0)"
 ]
 
@@ -27,3 +28,35 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 package-mode = false
+
+[tool.poetry.group.dev.dependencies]
+ruff = "==0.16.10"
+mypy = "==2.4.0"
+pre-commit = "==4.6.2"
+
+[tool.ruff]
+target-version = "py313"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.13"
+files = ["src"]
+follow_imports = "skip"
+check_untyped_defs = true
+disallow_untyped_defs = true
+warn_unused_ignores = true
+warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = [
+    "albumentations",
+    "albumentations.*",
+    "datasets",
+    "torchvision.*",
+    "pytorch_msssim",
+    "tqdm",
+]
+ignore_missing_imports = true
