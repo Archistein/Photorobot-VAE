@@ -94,8 +94,9 @@ Run all checks manually:
 
 ```bash
 $ poetry check --lock
-$ poetry run ruff check src
-$ poetry run ruff format --check src
+$ poetry run ruff check src quality_tests
+$ poetry run ruff format --check src quality_tests
 $ poetry run mypy src
+$ poetry run pytest
 $ poetry run pre-commit run --all-files
 ```

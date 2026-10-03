@@ -21,10 +21,12 @@ jobs:
       - name: Validate pre-commit configuration
         run: poetry run pre-commit validate-config
       - name: Check Ruff lint
-        run: poetry run ruff check src
+        run: poetry run ruff check src quality_tests
       - name: Check Ruff formatting
-        run: poetry run ruff format --check src
+        run: poetry run ruff format --check src quality_tests
       - name: Check types
         run: poetry run mypy src
+      - name: Run unit tests
+        run: poetry run pytest
       - name: Run pre-commit on tracked files
         run: poetry run pre-commit run --all-files
