@@ -1,0 +1,14 @@
+services:
+  trainer:
+    build: .
+    image: photorobot-vae-trainer:latest
+    init: true
+    shm_size: 2gb
+    volumes:
+      - ./training-output:/app/output
+      - hf-cache:/cache/huggingface
+      - torch-cache:/cache/torch
+
+volumes:
+  hf-cache:
+  torch-cache:

@@ -1,0 +1,11 @@
+**
+!pyproject.toml
+!poetry.lock
+!README.md
+!configs/
+!configs/config.yaml
+!src/
+!src/model.py
+!src/train.py
+!src/train_model.py
+!src/utils.py

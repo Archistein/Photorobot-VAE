@@ -82,6 +82,39 @@ Run the application inside the Poetry environment:
 $ poetry run python src/app.py
 ```
 
+### Training in Docker
+
+Docker Compose builds a Python 3.13 image from the Poetry lock file. The image
+runs the training command only and is named `photorobot-vae-trainer:latest`;
+the desktop GUI remains a local application.
+The first run downloads the CelebA dataset and VGG16 weights. Docker volumes
+retain these downloads between runs.
+
+For CPU training:
+
+```bash
+$ docker compose run --build --rm trainer
+```
+
+For NVIDIA GPU training, use Docker Compose 2.30 or newer and a Docker host with
+GPU support configured ([Docker instructions](https://docs.docker.com/compose/how-tos/gpu-support/)):
+
+```bash
+$ docker compose -f compose.yaml -f compose.gpu.yaml run --build --rm trainer
+```
+
+Training uses `configs/config.yaml` from the image. After changing that file,
+rebuild the image with `--build`. The checkpoints are written to
+`training-output/params.pt` (best intermediate checkpoint, when available) and
+`training-output/last_params.pt` (saved after each epoch). To load a trained
+checkpoint in the GUI, point `params_path` in `configs/config.yaml` to it.
+
+The same entry point also runs outside Docker:
+
+```bash
+$ poetry run python src/train_model.py --output-dir training-output
+```
+
 ### Code quality
 
 Install the Git hook once:

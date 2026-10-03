@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -75,6 +77,8 @@ def loss(
     alpha: float = 1,
     beta: float = 1,
     lmbd: float = 0.25,
+    mean: float = utils.config["calc_mean"],
+    std: float = utils.config["calc_std"],
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Computes the combined KLd, reconstruction, SSIM, and VGG perceptual loss
 
@@ -86,6 +90,8 @@ def loss(
         alpha (float): Weight for reconstruction loss
         beta (float): Weight for SSIM loss
         lmbd (float): Weight for VGG perceptual loss
+        mean (float): Mean used for input normalization
+        std (float): Standard deviation used for input normalization
 
     Returns:
         (tuple[torch.Tensor, torch.Tensor]):
@@ -108,8 +114,8 @@ def loss(
     reconstruction_loss = torch.mean(torch.log(torch.cosh(reconstr - target)))
     regularization_term = -0.5 * torch.sum(1 + logvar - mu**2 - logvar.exp(), dim=1)
 
-    generated = ssim_denorm(reconstr)
-    target = ssim_denorm(target)
+    generated = ssim_denorm(reconstr, mean, std)
+    target = ssim_denorm(target, mean, std)
 
     generated = torch.clamp(generated, 0, 1)
     target = torch.clamp(target, 0, 1)
@@ -126,9 +132,13 @@ def loss(
     )
 
 
-@torch.inference_mode
+@torch.inference_mode()
 def evaluate(
-    vae: VAE, beta: float, dataloader: torch.utils.data.DataLoader
+    vae: VAE,
+    beta: float,
+    dataloader: torch.utils.data.DataLoader,
+    mean: float = utils.config["calc_mean"],
+    std: float = utils.config["calc_std"],
 ) -> tuple[float, float]:
     """Evaluates the VAE model on a validation set
 
@@ -136,6 +146,8 @@ def evaluate(
         vae (VAE): The trained variational autoencoder model
         beta (float): Weight for the KL divergence term
         dataloader (DataLoader): DataLoader for validation data
+        mean (float): Mean used for input normalization
+        std (float): Standard deviation used for input normalization
 
     Returns:
         (tuple[float, float]): Average reconstruction and KL divergence losses
@@ -148,11 +160,13 @@ def evaluate(
     total_samples = 0
 
     for inputs in (pbar := tqdm(dataloader, desc="Validation")):
-        inputs = inputs.to(utils.config.device)
+        inputs = inputs.to(utils.device)
 
         reconstructions, mu, logvar = vae(inputs, stochastic=False)
 
-        reconstruction_loss, kl_loss = loss(reconstructions, inputs, mu, logvar, False)
+        reconstruction_loss, kl_loss = loss(
+            reconstructions, inputs, mu, logvar, False, mean=mean, std=std
+        )
 
         running_rec_loss += reconstruction_loss.item() * inputs.size(0)
         running_kl_loss += kl_loss.item() * inputs.size(0)
@@ -176,6 +190,7 @@ def fit(
     config: OmegaConf,
     train_dataloader: DataLoader,
     val_dataloader: DataLoader,
+    output_dir: Path = Path("."),
 ) -> None:
     """Trains the VAE model using a custom loss function
 
@@ -184,10 +199,12 @@ def fit(
         config (OmegaConf): Training hyperparameters and settings
         train_dataloader (DataLoader): DataLoader for training data
         val_dataloader (DataLoader): DataLoader for validation data
+        output_dir (Path): Directory for model checkpoints
     """
 
     vae.train()
     vae.to(utils.device)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     delta = config["delta_beta"]
     max_beta = config["max_beta"]
@@ -217,7 +234,14 @@ def fit(
 
             reconstructions, mu, logvar = vae(inputs)
 
-            reconstruction_loss, kl_loss = loss(reconstructions, inputs, mu, logvar)
+            reconstruction_loss, kl_loss = loss(
+                reconstructions,
+                inputs,
+                mu,
+                logvar,
+                mean=config["calc_mean"],
+                std=config["calc_std"],
+            )
             elbo_loss = reconstruction_loss + beta * kl_loss
 
             running_rec_loss += reconstruction_loss.item() * inputs.size(0)
@@ -247,7 +271,7 @@ def fit(
 
                 if avg_elbo_loss < min_elbo:
                     min_elbo = avg_elbo_loss
-                    torch.save(vae.state_dict(), "params.pt")
+                    torch.save(vae.state_dict(), output_dir / "params.pt")
 
                 running_rec_loss = 0
                 running_kl_loss = 0
@@ -257,8 +281,14 @@ def fit(
             kl_losses.append(avg_kl_loss)
             elbo_losses.append(avg_elbo_loss)
 
-        val_rec_loss, val_kl_loss = evaluate(vae, beta, val_dataloader)
+        val_rec_loss, val_kl_loss = evaluate(
+            vae,
+            beta,
+            val_dataloader,
+            mean=config["calc_mean"],
+            std=config["calc_std"],
+        )
 
-        torch.save(vae.state_dict(), "last_params.pt")
+        torch.save(vae.state_dict(), output_dir / "last_params.pt")
 
         scheduler.step()
