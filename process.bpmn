@@ -1,0 +1,676 @@
+<?xml version='1.0' encoding='utf-8'?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" id="Definitions_PhotrobotVAE" targetNamespace="urn:photorobot-vae:bpmn" exporter="Photorobot VAE documentation">
+  <bpmn:collaboration id="Collaboration_Photrobot">
+    <bpmn:participant id="Participant_Photrobot" name="Facial composite creation · Photorobot VAE" processRef="Process_Photrobot" />
+  </bpmn:collaboration>
+  <bpmn:process id="Process_Photrobot" name="Create and edit a facial composite" isExecutable="false">
+    <bpmn:documentation>BPMN 2.0: facial composite creation and interactive editing in Photorobot VAE. Prepared on 2026-10-03 from source revision 26cba4907b18c7157dfab5ea0a2b0fa3f35b4f81. Related documentation: MODEL_CARD.md. This descriptive process is not connected to a workflow engine. BPMN DI coordinates are included for the main process and the collapsed direction-search subprocess.
+
+The User and Photorobot VAE application lanes belong to one process. All branching gateways are exclusive: one alternative is selected. Repeated editing returns to image review. Model weights and directions must be compatible. Model training, input/output failures, and application exit outside the successful scenario are outside this diagram's scope. Service tasks represent existing application computations or GUI operations without workflow-engine bindings. When a new direction is rejected, the user chooses another action; automatic restoration of the displayed image is not assumed.</bpmn:documentation>
+    <bpmn:laneSet id="LaneSet_Photrobot">
+      <bpmn:lane id="Lane_User" name="User">
+        <bpmn:flowNodeRef>Event_Start</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Launch</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_ChooseSource</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_SelectReference</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Review</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Accept</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_ChooseEdit</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Edit</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_AdjustSliders</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_SelectMask</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_ConfirmDirection</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Direction</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_SelectExport</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_App" name="Photorobot VAE application">
+        <bpmn:flowNodeRef>Task_Initialize</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Source</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Zero</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Sample</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Preprocess</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Reference</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Encode</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_OptimizeReference</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_ReferenceMerge</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_SourceMerge</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Render</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Recalculate</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>SubProcess_LocalDirection</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_AddDirection</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_EditMerge</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Save</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Event_End</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="Event_Start" name="Start" isInterrupting="true">
+      <bpmn:documentation>The user begins creating a facial composite.</bpmn:documentation>
+      <bpmn:outgoing>Flow_Start</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:userTask id="Task_Launch" name="Launch Photorobot VAE">
+      <bpmn:documentation>Launch the local application using src/app.py.</bpmn:documentation>
+      <bpmn:incoming>Flow_Start</bpmn:incoming>
+      <bpmn:outgoing>Flow_Launch</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:serviceTask id="Task_Initialize" name="Load model and directions">
+      <bpmn:documentation>Read configs/config.yaml and load params/weights/weights.pt and params/directions/grouped_directions.pkl. Initialize z to zero. The successful scenario assumes compatible artifacts and required dependencies are available.</bpmn:documentation>
+      <bpmn:incoming>Flow_Launch</bpmn:incoming>
+      <bpmn:outgoing>Flow_Initialize</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:userTask id="Task_ChooseSource" name="Choose the starting image">
+      <bpmn:documentation>Choose Reset latent, Sample, or reference loading. sourceMode is exactly one of zero, random, or reference.</bpmn:documentation>
+      <bpmn:incoming>Flow_Initialize</bpmn:incoming>
+      <bpmn:incoming>Flow_NewSource</bpmn:incoming>
+      <bpmn:outgoing>Flow_ChooseSource</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="Gateway_Source" name="Image source?" gatewayDirection="Diverging">
+      <bpmn:documentation>Select exactly one branch according to the user's choice.</bpmn:documentation>
+      <bpmn:incoming>Flow_ChooseSource</bpmn:incoming>
+      <bpmn:outgoing>Flow_Zero</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Random</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Reference</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:serviceTask id="Task_Zero" name="Set z = 0">
+      <bpmn:documentation>reset_latent sets the base latent vector to zero. Existing direction coefficients are reset separately using Reset sliders.</bpmn:documentation>
+      <bpmn:incoming>Flow_Zero</bpmn:incoming>
+      <bpmn:outgoing>Flow_ZeroMerge</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="Task_Sample" name="Sample a random z">
+      <bpmn:documentation>sample creates a 512-dimensional torch.randn vector. Existing direction coefficients are retained.</bpmn:documentation>
+      <bpmn:incoming>Flow_Random</bpmn:incoming>
+      <bpmn:outgoing>Flow_RandomMerge</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:userTask id="Task_SelectReference" name="Select reference and loading method">
+      <bpmn:documentation>Select a PNG, JPG, JPEG, or GIF reference and choose Load using encoder or Load using optimization. The successful scenario assumes a readable file has been selected.</bpmn:documentation>
+      <bpmn:incoming>Flow_Reference</bpmn:incoming>
+      <bpmn:outgoing>Flow_SelectReference</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:serviceTask id="Task_Preprocess" name="Preprocess the reference">
+      <bpmn:documentation>Convert the reference to RGB, resize to 160 × 160, centrally crop to height 160 and width 144, convert to one channel, normalize, and create a tensor.</bpmn:documentation>
+      <bpmn:incoming>Flow_SelectReference</bpmn:incoming>
+      <bpmn:outgoing>Flow_Preprocess</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:exclusiveGateway id="Gateway_Reference" name="Loading method?" gatewayDirection="Diverging">
+      <bpmn:documentation>referenceMethod is either encoder or optimization.</bpmn:documentation>
+      <bpmn:incoming>Flow_Preprocess</bpmn:incoming>
+      <bpmn:outgoing>Flow_Encoder</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Optimization</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:serviceTask id="Task_Encode" name="Encode the reference into z">
+      <bpmn:documentation>load_encoder uses mu, the mean of the encoder's latent distribution.</bpmn:documentation>
+      <bpmn:incoming>Flow_Encoder</bpmn:incoming>
+      <bpmn:outgoing>Flow_EncodeMerge</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="Task_OptimizeReference" name="Optimize z for the reference">
+      <bpmn:documentation>load_optimization starts from the encoder mean and performs 100 AdamW steps with initial learning rate 0.02, VGG perceptual loss, and latent regularization.</bpmn:documentation>
+      <bpmn:incoming>Flow_Optimization</bpmn:incoming>
+      <bpmn:outgoing>Flow_OptimizeMerge</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:exclusiveGateway id="Gateway_ReferenceMerge" gatewayDirection="Converging">
+      <bpmn:documentation>Merge the alternative reference-loading branches.</bpmn:documentation>
+      <bpmn:incoming>Flow_EncodeMerge</bpmn:incoming>
+      <bpmn:incoming>Flow_OptimizeMerge</bpmn:incoming>
+      <bpmn:outgoing>Flow_ReferenceMerge</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:exclusiveGateway id="Gateway_SourceMerge" gatewayDirection="Converging">
+      <bpmn:documentation>Merge the alternative latent-source branches.</bpmn:documentation>
+      <bpmn:incoming>Flow_ReferenceMerge</bpmn:incoming>
+      <bpmn:incoming>Flow_ZeroMerge</bpmn:incoming>
+      <bpmn:incoming>Flow_RandomMerge</bpmn:incoming>
+      <bpmn:outgoing>Flow_SourceMerge</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:serviceTask id="Task_Render" name="Generate and display the composite">
+      <bpmn:documentation>Decode the current latent state with active editing directions, reverse normalization, and display the grayscale image in the GUI.</bpmn:documentation>
+      <bpmn:incoming>Flow_SourceMerge</bpmn:incoming>
+      <bpmn:incoming>Flow_EditMerge</bpmn:incoming>
+      <bpmn:outgoing>Flow_Render</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:userTask id="Task_Review" name="Review the image">
+      <bpmn:documentation>The user visually checks whether the result meets the intended task. The application provides neither an identity probability nor an automatic quality verdict.</bpmn:documentation>
+      <bpmn:incoming>Flow_Render</bpmn:incoming>
+      <bpmn:outgoing>Flow_Review</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="Gateway_Accept" name="Accept the image?" gatewayDirection="Diverging">
+      <bpmn:documentation>isAccepted records the user's decision about image suitability.</bpmn:documentation>
+      <bpmn:incoming>Flow_Review</bpmn:incoming>
+      <bpmn:outgoing>Flow_Accept</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Edit</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:userTask id="Task_ChooseEdit" name="Choose the next edit">
+      <bpmn:documentation>Choose predefined sliders, mask-based direction search, or a new starting image.</bpmn:documentation>
+      <bpmn:incoming>Flow_Edit</bpmn:incoming>
+      <bpmn:incoming>Flow_RejectDirection</bpmn:incoming>
+      <bpmn:outgoing>Flow_ChooseEdit</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="Gateway_Edit" name="Editing method?" gatewayDirection="Diverging">
+      <bpmn:documentation>editMode is exactly one of sliders, mask, or new_source.</bpmn:documentation>
+      <bpmn:incoming>Flow_ChooseEdit</bpmn:incoming>
+      <bpmn:outgoing>Flow_Sliders</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Mask</bpmn:outgoing>
+      <bpmn:outgoing>Flow_NewSource</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:userTask id="Task_AdjustSliders" name="Adjust feature sliders">
+      <bpmn:documentation>Adjust coefficients of predefined or previously added custom directions and, when needed, the Align parameter.</bpmn:documentation>
+      <bpmn:incoming>Flow_Sliders</bpmn:incoming>
+      <bpmn:outgoing>Flow_AdjustSliders</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:serviceTask id="Task_Recalculate" name="Update the latent state">
+      <bpmn:documentation>update_direction_coeff and update_image recalculate direction contributions using the selected coefficients.</bpmn:documentation>
+      <bpmn:incoming>Flow_AdjustSliders</bpmn:incoming>
+      <bpmn:outgoing>Flow_Recalculate</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:userTask id="Task_SelectMask" name="Select a region and settings">
+      <bpmn:documentation>Use Search → Select to paint a nonempty region, Search → Params to set alpha, beta, gamma, delta, lr, and steps, and Search → Optimize to begin search. A nonempty mask is a precondition because its area is used as a divisor.</bpmn:documentation>
+      <bpmn:incoming>Flow_Mask</bpmn:incoming>
+      <bpmn:outgoing>Flow_SelectMask</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:subProcess id="SubProcess_LocalDirection" name="Find an editing direction">
+      <bpmn:documentation>Collapsed search_direction subprocess. Its detail diagram is included as the second BPMNDiagram. Computation runs in a worker thread, and the GUI receives image and progress updates through signals.</bpmn:documentation>
+      <bpmn:incoming>Flow_SelectMask</bpmn:incoming>
+      <bpmn:outgoing>Flow_LocalDirection</bpmn:outgoing>
+      <bpmn:startEvent id="Event_SearchStart" name="Start search" isInterrupting="true">
+        <bpmn:documentation>A nonempty mask, the current latent base, and optimization settings are available.</bpmn:documentation>
+        <bpmn:outgoing>Flow_SearchStart</bpmn:outgoing>
+      </bpmn:startEvent>
+      <bpmn:serviceTask id="Task_OptimizeMasked" name="Optimize z using the mask">
+        <bpmn:documentation>Start from z_init with a small random perturbation. AdamW optimizes negative masked L1 error, positive unmasked L1 error, and latent regularization. alpha_eff = alpha × mask.numel() / mask.sum(). The user sets learning rate and step count. Each iteration updates the image and progress through GUI signals.</bpmn:documentation>
+        <bpmn:incoming>Flow_SearchStart</bpmn:incoming>
+        <bpmn:outgoing>Flow_Optimized</bpmn:outgoing>
+      </bpmn:serviceTask>
+      <bpmn:serviceTask id="Task_ComputeDirection" name="Compute d = z_final − z_init">
+        <bpmn:documentation>Subtract the initial latent vector from the optimized vector to obtain the candidate editing direction.</bpmn:documentation>
+        <bpmn:incoming>Flow_Optimized</bpmn:incoming>
+        <bpmn:outgoing>Flow_Computed</bpmn:outgoing>
+      </bpmn:serviceTask>
+      <bpmn:serviceTask id="Task_RestoreBase" name="Restore the original z">
+        <bpmn:documentation>Restore self.z = init_z, send the candidate direction to add_custom_slider, and hide the progress indicator.</bpmn:documentation>
+        <bpmn:incoming>Flow_Computed</bpmn:incoming>
+        <bpmn:outgoing>Flow_Restored</bpmn:outgoing>
+      </bpmn:serviceTask>
+      <bpmn:endEvent id="Event_SearchEnd" name="Direction found">
+        <bpmn:documentation>Return control to the direction-confirmation dialog in the main process.</bpmn:documentation>
+        <bpmn:incoming>Flow_Restored</bpmn:incoming>
+      </bpmn:endEvent>
+      <bpmn:sequenceFlow id="Flow_SearchStart" sourceRef="Event_SearchStart" targetRef="Task_OptimizeMasked" />
+      <bpmn:sequenceFlow id="Flow_Optimized" sourceRef="Task_OptimizeMasked" targetRef="Task_ComputeDirection" />
+      <bpmn:sequenceFlow id="Flow_Computed" sourceRef="Task_ComputeDirection" targetRef="Task_RestoreBase" />
+      <bpmn:sequenceFlow id="Flow_Restored" sourceRef="Task_RestoreBase" targetRef="Event_SearchEnd" />
+    </bpmn:subProcess>
+    <bpmn:userTask id="Task_ConfirmDirection" name="Review and name the direction">
+      <bpmn:documentation>After search, SaveDialog lets the user accept and name the direction or reject it. directionAccepted records this decision.</bpmn:documentation>
+      <bpmn:incoming>Flow_LocalDirection</bpmn:incoming>
+      <bpmn:outgoing>Flow_ConfirmDirection</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="Gateway_Direction" name="Accept the direction?" gatewayDirection="Diverging">
+      <bpmn:documentation>Acceptance adds a custom slider. Rejection returns the user to choosing the next edit.</bpmn:documentation>
+      <bpmn:incoming>Flow_ConfirmDirection</bpmn:incoming>
+      <bpmn:outgoing>Flow_AddDirection</bpmn:outgoing>
+      <bpmn:outgoing>Flow_RejectDirection</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:serviceTask id="Task_AddDirection" name="Add the direction and its slider">
+      <bpmn:documentation>add_custom_slider adds d to the Custom group, initializes its coefficient to 1, and creates a slider. The direction exists in the current session; persistent export of new directions is not implemented.</bpmn:documentation>
+      <bpmn:incoming>Flow_AddDirection</bpmn:incoming>
+      <bpmn:outgoing>Flow_AddedDirection</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:exclusiveGateway id="Gateway_EditMerge" gatewayDirection="Converging">
+      <bpmn:documentation>Merge alternative editing branches before redrawing the image.</bpmn:documentation>
+      <bpmn:incoming>Flow_Recalculate</bpmn:incoming>
+      <bpmn:incoming>Flow_AddedDirection</bpmn:incoming>
+      <bpmn:outgoing>Flow_EditMerge</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:userTask id="Task_SelectExport" name="Choose the JPG export path">
+      <bpmn:documentation>Use File → Export sketch to select an output path. Synthetic origin should be disclosed when distributing the image; automatic labeling is not implemented.</bpmn:documentation>
+      <bpmn:incoming>Flow_Accept</bpmn:incoming>
+      <bpmn:outgoing>Flow_SelectExport</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:serviceTask id="Task_Save" name="Save the composite as JPG">
+      <bpmn:documentation>export_sketch saves the currently displayed GUI pixmap. This exports an image rather than a complete session or custom direction set. The successful scenario assumes the file is written successfully.</bpmn:documentation>
+      <bpmn:incoming>Flow_SelectExport</bpmn:incoming>
+      <bpmn:outgoing>Flow_Save</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:endEvent id="Event_End" name="Composite saved">
+      <bpmn:documentation>Facial composite creation and image export complete successfully.</bpmn:documentation>
+      <bpmn:incoming>Flow_Save</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_Start" sourceRef="Event_Start" targetRef="Task_Launch" />
+    <bpmn:sequenceFlow id="Flow_Launch" sourceRef="Task_Launch" targetRef="Task_Initialize" />
+    <bpmn:sequenceFlow id="Flow_Initialize" sourceRef="Task_Initialize" targetRef="Task_ChooseSource" />
+    <bpmn:sequenceFlow id="Flow_ChooseSource" sourceRef="Task_ChooseSource" targetRef="Gateway_Source" />
+    <bpmn:sequenceFlow id="Flow_Zero" sourceRef="Gateway_Source" targetRef="Task_Zero" name="Zero">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">sourceMode = 'zero'</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_Random" sourceRef="Gateway_Source" targetRef="Task_Sample" name="Random">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">sourceMode = 'random'</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_Reference" sourceRef="Gateway_Source" targetRef="Task_SelectReference" name="Reference">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">sourceMode = 'reference'</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_SelectReference" sourceRef="Task_SelectReference" targetRef="Task_Preprocess" />
+    <bpmn:sequenceFlow id="Flow_Preprocess" sourceRef="Task_Preprocess" targetRef="Gateway_Reference" />
+    <bpmn:sequenceFlow id="Flow_Encoder" sourceRef="Gateway_Reference" targetRef="Task_Encode" name="Encoder">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">referenceMethod = 'encoder'</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_Optimization" sourceRef="Gateway_Reference" targetRef="Task_OptimizeReference" name="Optimization">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">referenceMethod = 'optimization'</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_EncodeMerge" sourceRef="Task_Encode" targetRef="Gateway_ReferenceMerge" />
+    <bpmn:sequenceFlow id="Flow_OptimizeMerge" sourceRef="Task_OptimizeReference" targetRef="Gateway_ReferenceMerge" />
+    <bpmn:sequenceFlow id="Flow_ReferenceMerge" sourceRef="Gateway_ReferenceMerge" targetRef="Gateway_SourceMerge" />
+    <bpmn:sequenceFlow id="Flow_ZeroMerge" sourceRef="Task_Zero" targetRef="Gateway_SourceMerge" />
+    <bpmn:sequenceFlow id="Flow_RandomMerge" sourceRef="Task_Sample" targetRef="Gateway_SourceMerge" />
+    <bpmn:sequenceFlow id="Flow_SourceMerge" sourceRef="Gateway_SourceMerge" targetRef="Task_Render" />
+    <bpmn:sequenceFlow id="Flow_Render" sourceRef="Task_Render" targetRef="Task_Review" />
+    <bpmn:sequenceFlow id="Flow_Review" sourceRef="Task_Review" targetRef="Gateway_Accept" />
+    <bpmn:sequenceFlow id="Flow_Accept" sourceRef="Gateway_Accept" targetRef="Task_SelectExport" name="Yes">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">isAccepted = true</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_Edit" sourceRef="Gateway_Accept" targetRef="Task_ChooseEdit" name="No">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">isAccepted = false</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_ChooseEdit" sourceRef="Task_ChooseEdit" targetRef="Gateway_Edit" />
+    <bpmn:sequenceFlow id="Flow_Sliders" sourceRef="Gateway_Edit" targetRef="Task_AdjustSliders" name="Sliders">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">editMode = 'sliders'</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_Mask" sourceRef="Gateway_Edit" targetRef="Task_SelectMask" name="Mask">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">editMode = 'mask'</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_NewSource" sourceRef="Gateway_Edit" targetRef="Task_ChooseSource" name="New source">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">editMode = 'new_source'</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_AdjustSliders" sourceRef="Task_AdjustSliders" targetRef="Task_Recalculate" />
+    <bpmn:sequenceFlow id="Flow_Recalculate" sourceRef="Task_Recalculate" targetRef="Gateway_EditMerge" />
+    <bpmn:sequenceFlow id="Flow_SelectMask" sourceRef="Task_SelectMask" targetRef="SubProcess_LocalDirection" />
+    <bpmn:sequenceFlow id="Flow_LocalDirection" sourceRef="SubProcess_LocalDirection" targetRef="Task_ConfirmDirection" />
+    <bpmn:sequenceFlow id="Flow_ConfirmDirection" sourceRef="Task_ConfirmDirection" targetRef="Gateway_Direction" />
+    <bpmn:sequenceFlow id="Flow_AddDirection" sourceRef="Gateway_Direction" targetRef="Task_AddDirection" name="Yes">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">directionAccepted = true</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_RejectDirection" sourceRef="Gateway_Direction" targetRef="Task_ChooseEdit" name="No">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">directionAccepted = false</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_AddedDirection" sourceRef="Task_AddDirection" targetRef="Gateway_EditMerge" />
+    <bpmn:sequenceFlow id="Flow_EditMerge" sourceRef="Gateway_EditMerge" targetRef="Task_Render" />
+    <bpmn:sequenceFlow id="Flow_SelectExport" sourceRef="Task_SelectExport" targetRef="Task_Save" />
+    <bpmn:sequenceFlow id="Flow_Save" sourceRef="Task_Save" targetRef="Event_End" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="Diagram_Main" name="Create and edit a facial composite">
+    <bpmndi:BPMNPlane id="Plane_Diagram_Main" bpmnElement="Collaboration_Photrobot">
+      <bpmndi:BPMNShape id="Shape_Participant_Photrobot" bpmnElement="Participant_Photrobot" isHorizontal="true">
+        <dc:Bounds x="80" y="80" width="3210" height="1060" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Lane_User" bpmnElement="Lane_User" isHorizontal="true">
+        <dc:Bounds x="110" y="80" width="3180" height="420" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Lane_App" bpmnElement="Lane_App" isHorizontal="true">
+        <dc:Bounds x="110" y="500" width="3180" height="640" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Event_Start" bpmnElement="Event_Start">
+        <dc:Bounds x="150" y="145" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="133" y="188" width="70" height="20" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_Launch" bpmnElement="Task_Launch">
+        <dc:Bounds x="225" y="122" width="155" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_Initialize" bpmnElement="Task_Initialize">
+        <dc:Bounds x="225" y="620" width="155" height="90" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_ChooseSource" bpmnElement="Task_ChooseSource">
+        <dc:Bounds x="455" y="122" width="160" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Gateway_Source" bpmnElement="Gateway_Source" isMarkerVisible="true">
+        <dc:Bounds x="510" y="640" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="465" y="600" width="140" height="35" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_Zero" bpmnElement="Task_Zero">
+        <dc:Bounds x="680" y="530" width="165" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_Sample" bpmnElement="Task_Sample">
+        <dc:Bounds x="680" y="650" width="165" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_SelectReference" bpmnElement="Task_SelectReference">
+        <dc:Bounds x="680" y="265" width="165" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_Preprocess" bpmnElement="Task_Preprocess">
+        <dc:Bounds x="680" y="930" width="170" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Gateway_Reference" bpmnElement="Gateway_Reference" isMarkerVisible="true">
+        <dc:Bounds x="905" y="945" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="865" y="795" width="135" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_Encode" bpmnElement="Task_Encode">
+        <dc:Bounds x="1030" y="850" width="165" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_OptimizeReference" bpmnElement="Task_OptimizeReference">
+        <dc:Bounds x="1030" y="1000" width="165" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Gateway_ReferenceMerge" bpmnElement="Gateway_ReferenceMerge" isMarkerVisible="true">
+        <dc:Bounds x="1285" y="945" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Gateway_SourceMerge" bpmnElement="Gateway_SourceMerge" isMarkerVisible="true">
+        <dc:Bounds x="1400" y="640" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_Render" bpmnElement="Task_Render">
+        <dc:Bounds x="1510" y="620" width="165" height="90" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_Review" bpmnElement="Task_Review">
+        <dc:Bounds x="1510" y="122" width="165" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Gateway_Accept" bpmnElement="Gateway_Accept" isMarkerVisible="true">
+        <dc:Bounds x="1760" y="137" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1710" y="88" width="150" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_ChooseEdit" bpmnElement="Task_ChooseEdit">
+        <dc:Bounds x="1725" y="350" width="170" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Gateway_Edit" bpmnElement="Gateway_Edit" isMarkerVisible="true">
+        <dc:Bounds x="2010" y="365" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1965" y="310" width="140" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_AdjustSliders" bpmnElement="Task_AdjustSliders">
+        <dc:Bounds x="2145" y="230" width="170" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_Recalculate" bpmnElement="Task_Recalculate">
+        <dc:Bounds x="2145" y="620" width="170" height="90" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_SelectMask" bpmnElement="Task_SelectMask">
+        <dc:Bounds x="2145" y="365" width="170" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_SubProcess_LocalDirection" bpmnElement="SubProcess_LocalDirection" isExpanded="false">
+        <dc:Bounds x="2145" y="870" width="170" height="90" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_ConfirmDirection" bpmnElement="Task_ConfirmDirection">
+        <dc:Bounds x="2430" y="365" width="170" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Gateway_Direction" bpmnElement="Gateway_Direction" isMarkerVisible="true">
+        <dc:Bounds x="2680" y="380" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2640" y="328" width="135" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_AddDirection" bpmnElement="Task_AddDirection">
+        <dc:Bounds x="2610" y="870" width="180" height="90" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Gateway_EditMerge" bpmnElement="Gateway_EditMerge" isMarkerVisible="true">
+        <dc:Bounds x="2425" y="740" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_SelectExport" bpmnElement="Task_SelectExport">
+        <dc:Bounds x="2890" y="122" width="170" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_Save" bpmnElement="Task_Save">
+        <dc:Bounds x="2890" y="620" width="170" height="90" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Event_End" bpmnElement="Event_End">
+        <dc:Bounds x="3160" y="647" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3110" y="690" width="135" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Edge_Flow_Start" bpmnElement="Flow_Start">
+        <di:waypoint x="186" y="163" />
+        <di:waypoint x="225" y="162" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Launch" bpmnElement="Flow_Launch">
+        <di:waypoint x="302" y="202" />
+        <di:waypoint x="302" y="620" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Initialize" bpmnElement="Flow_Initialize">
+        <di:waypoint x="380" y="665" />
+        <di:waypoint x="420" y="665" />
+        <di:waypoint x="420" y="162" />
+        <di:waypoint x="455" y="162" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_ChooseSource" bpmnElement="Flow_ChooseSource">
+        <di:waypoint x="535" y="202" />
+        <di:waypoint x="535" y="640" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Zero" bpmnElement="Flow_Zero">
+        <di:waypoint x="535" y="640" />
+        <di:waypoint x="535" y="570" />
+        <di:waypoint x="680" y="570" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="565" y="544" width="100" height="22" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Random" bpmnElement="Flow_Random">
+        <di:waypoint x="560" y="665" />
+        <di:waypoint x="595" y="665" />
+        <di:waypoint x="595" y="690" />
+        <di:waypoint x="680" y="690" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="580" y="700" width="100" height="22" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Reference" bpmnElement="Flow_Reference">
+        <di:waypoint x="535" y="690" />
+        <di:waypoint x="535" y="795" />
+        <di:waypoint x="620" y="795" />
+        <di:waypoint x="620" y="305" />
+        <di:waypoint x="680" y="305" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="530" y="760" width="100" height="22" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_SelectReference" bpmnElement="Flow_SelectReference">
+        <di:waypoint x="680" y="305" />
+        <di:waypoint x="650" y="305" />
+        <di:waypoint x="650" y="970" />
+        <di:waypoint x="680" y="970" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Preprocess" bpmnElement="Flow_Preprocess">
+        <di:waypoint x="850" y="970" />
+        <di:waypoint x="905" y="970" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Encoder" bpmnElement="Flow_Encoder">
+        <di:waypoint x="930" y="945" />
+        <di:waypoint x="930" y="890" />
+        <di:waypoint x="1030" y="890" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="943" y="863" width="80" height="22" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Optimization" bpmnElement="Flow_Optimization">
+        <di:waypoint x="930" y="995" />
+        <di:waypoint x="930" y="1040" />
+        <di:waypoint x="1030" y="1040" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="930" y="1055" width="100" height="22" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_EncodeMerge" bpmnElement="Flow_EncodeMerge">
+        <di:waypoint x="1195" y="890" />
+        <di:waypoint x="1310" y="890" />
+        <di:waypoint x="1310" y="945" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_OptimizeMerge" bpmnElement="Flow_OptimizeMerge">
+        <di:waypoint x="1195" y="1040" />
+        <di:waypoint x="1310" y="1040" />
+        <di:waypoint x="1310" y="995" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_ReferenceMerge" bpmnElement="Flow_ReferenceMerge">
+        <di:waypoint x="1335" y="970" />
+        <di:waypoint x="1425" y="970" />
+        <di:waypoint x="1425" y="690" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_ZeroMerge" bpmnElement="Flow_ZeroMerge">
+        <di:waypoint x="845" y="570" />
+        <di:waypoint x="1425" y="570" />
+        <di:waypoint x="1425" y="640" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_RandomMerge" bpmnElement="Flow_RandomMerge">
+        <di:waypoint x="845" y="690" />
+        <di:waypoint x="1350" y="690" />
+        <di:waypoint x="1350" y="665" />
+        <di:waypoint x="1400" y="665" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_SourceMerge" bpmnElement="Flow_SourceMerge">
+        <di:waypoint x="1450" y="665" />
+        <di:waypoint x="1510" y="665" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Render" bpmnElement="Flow_Render">
+        <di:waypoint x="1592" y="620" />
+        <di:waypoint x="1592" y="202" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Review" bpmnElement="Flow_Review">
+        <di:waypoint x="1675" y="162" />
+        <di:waypoint x="1760" y="162" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Accept" bpmnElement="Flow_Accept">
+        <di:waypoint x="1810" y="162" />
+        <di:waypoint x="2890" y="162" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1855" y="133" width="40" height="22" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Edit" bpmnElement="Flow_Edit">
+        <di:waypoint x="1785" y="187" />
+        <di:waypoint x="1785" y="220" />
+        <di:waypoint x="1810" y="220" />
+        <di:waypoint x="1810" y="350" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1788" y="238" width="40" height="22" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_ChooseEdit" bpmnElement="Flow_ChooseEdit">
+        <di:waypoint x="1895" y="390" />
+        <di:waypoint x="2010" y="390" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Sliders" bpmnElement="Flow_Sliders">
+        <di:waypoint x="2035" y="365" />
+        <di:waypoint x="2035" y="270" />
+        <di:waypoint x="2145" y="270" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2042" y="238" width="90" height="22" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Mask" bpmnElement="Flow_Mask">
+        <di:waypoint x="2060" y="390" />
+        <di:waypoint x="2145" y="390" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2065" y="360" width="70" height="22" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_NewSource" bpmnElement="Flow_NewSource">
+        <di:waypoint x="2035" y="415" />
+        <di:waypoint x="2035" y="485" />
+        <di:waypoint x="450" y="485" />
+        <di:waypoint x="450" y="162" />
+        <di:waypoint x="455" y="162" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1860" y="468" width="125" height="22" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_AdjustSliders" bpmnElement="Flow_AdjustSliders">
+        <di:waypoint x="2315" y="270" />
+        <di:waypoint x="2360" y="270" />
+        <di:waypoint x="2360" y="665" />
+        <di:waypoint x="2315" y="665" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Recalculate" bpmnElement="Flow_Recalculate">
+        <di:waypoint x="2315" y="665" />
+        <di:waypoint x="2450" y="665" />
+        <di:waypoint x="2450" y="740" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_SelectMask" bpmnElement="Flow_SelectMask">
+        <di:waypoint x="2145" y="405" />
+        <di:waypoint x="2100" y="405" />
+        <di:waypoint x="2100" y="915" />
+        <di:waypoint x="2145" y="915" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_LocalDirection" bpmnElement="Flow_LocalDirection">
+        <di:waypoint x="2315" y="915" />
+        <di:waypoint x="2385" y="915" />
+        <di:waypoint x="2385" y="405" />
+        <di:waypoint x="2430" y="405" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_ConfirmDirection" bpmnElement="Flow_ConfirmDirection">
+        <di:waypoint x="2600" y="405" />
+        <di:waypoint x="2680" y="405" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_AddDirection" bpmnElement="Flow_AddDirection">
+        <di:waypoint x="2705" y="430" />
+        <di:waypoint x="2705" y="870" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2715" y="500" width="40" height="22" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_RejectDirection" bpmnElement="Flow_RejectDirection">
+        <di:waypoint x="2705" y="430" />
+        <di:waypoint x="2705" y="460" />
+        <di:waypoint x="1810" y="460" />
+        <di:waypoint x="1810" y="430" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2635" y="438" width="40" height="22" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_AddedDirection" bpmnElement="Flow_AddedDirection">
+        <di:waypoint x="2610" y="915" />
+        <di:waypoint x="2450" y="915" />
+        <di:waypoint x="2450" y="790" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_EditMerge" bpmnElement="Flow_EditMerge">
+        <di:waypoint x="2425" y="765" />
+        <di:waypoint x="1592" y="765" />
+        <di:waypoint x="1592" y="710" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_SelectExport" bpmnElement="Flow_SelectExport">
+        <di:waypoint x="2975" y="202" />
+        <di:waypoint x="2975" y="620" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Save" bpmnElement="Flow_Save">
+        <di:waypoint x="3060" y="665" />
+        <di:waypoint x="3160" y="665" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+  <bpmndi:BPMNDiagram id="Diagram_LocalDirection" name="Mask-based direction search subprocess">
+    <bpmndi:BPMNPlane id="Plane_Diagram_LocalDirection" bpmnElement="SubProcess_LocalDirection">
+      <bpmndi:BPMNShape id="Shape_Event_SearchStart" bpmnElement="Event_SearchStart">
+        <dc:Bounds x="160" y="145" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="125" y="188" width="110" height="30" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_OptimizeMasked" bpmnElement="Task_OptimizeMasked">
+        <dc:Bounds x="240" y="122" width="240" height="90" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_ComputeDirection" bpmnElement="Task_ComputeDirection">
+        <dc:Bounds x="540" y="122" width="240" height="90" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_RestoreBase" bpmnElement="Task_RestoreBase">
+        <dc:Bounds x="840" y="122" width="220" height="90" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Event_SearchEnd" bpmnElement="Event_SearchEnd">
+        <dc:Bounds x="1130" y="145" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1080" y="188" width="140" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Edge_Flow_SearchStart" bpmnElement="Flow_SearchStart">
+        <di:waypoint x="196" y="163" />
+        <di:waypoint x="240" y="167" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Optimized" bpmnElement="Flow_Optimized">
+        <di:waypoint x="480" y="167" />
+        <di:waypoint x="540" y="167" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Computed" bpmnElement="Flow_Computed">
+        <di:waypoint x="780" y="167" />
+        <di:waypoint x="840" y="167" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Restored" bpmnElement="Flow_Restored">
+        <di:waypoint x="1060" y="167" />
+        <di:waypoint x="1130" y="163" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
